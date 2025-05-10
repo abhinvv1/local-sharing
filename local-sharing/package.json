@@ -1,0 +1,19 @@
+{
+  "name": "local-sharing",
+  "version": "1.0.0",
+  "main": "localSharing.js",
+  "scripts": {
+    "test": "jest",
+    "example": "node example.js"
+  },
+  "keywords": [
+    "local-network",
+    "file-sharing",
+    "device-discovery",
+    "p2p",
+    "messaging"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "A library for secure local network communication without internet dependency"
+}
