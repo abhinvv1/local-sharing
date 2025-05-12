@@ -15,5 +15,8 @@
   ],
   "author": "",
   "license": "ISC",
-  "description": "A library for secure local network communication without internet dependency"
+  "description": "A library for secure local network communication without internet dependency",
+  "dependencies": {
+    "node-forge": "^1.3.1"
+  }
 }

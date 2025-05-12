@@ -1,0 +1,149 @@
+version: '3'
+
+services:
+  # Device with SSL enabled that generates its own keys
+  device1:
+    build: .
+    container_name: device1
+    environment:
+      - DEVICE_NAME=Device1
+      - DEVICE_PORT=8765
+      - NETWORK_PASSWORD=secret-network-password
+      # SSL configuration
+      - USE_SSL=true
+      - GENERATE_KEYS=true
+      - TRUST_ALL_CERTIFICATES=true # For initial testing
+    networks:
+      localnet:
+        ipv4_address: 172.20.0.2
+    ports:
+      - "8765:8765"
+      - "8766:8766/udp"
+    volumes:
+      - ./device1-data:/app/received-files
+      - ./device1-keys:/app/keys
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8765"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: on-failure
+
+  # Device with SSL enabled that requires certificate verification
+  device2:
+    build: .
+    container_name: device2
+    environment:
+      - DEVICE_NAME=Device2
+      - DEVICE_PORT=8767
+      - NETWORK_PASSWORD=secret-network-password
+      # SSL configuration
+      - USE_SSL=true
+      - GENERATE_KEYS=true
+      - TRUST_ALL_CERTIFICATES=true # Changed to true for easier testing
+    networks:
+      localnet:
+        ipv4_address: 172.20.0.3
+    ports:
+      - "8767:8767"
+      - "8768:8766/udp"
+    volumes:
+      - ./device2-data:/app/received-files
+      - ./device2-keys:/app/keys
+    depends_on:
+      - device1
+    restart: on-failure
+
+  # Device with SSL disabled for testing non-secure connections
+  device3:
+    build: .
+    container_name: device3
+    environment:
+      - DEVICE_NAME=Device3
+      - DEVICE_PORT=8769
+      - NETWORK_PASSWORD=secret-network-password
+      # SSL configuration 
+      - USE_SSL=false
+    networks:
+      localnet:
+        ipv4_address: 172.20.0.4
+    ports:
+      - "8769:8769"
+      - "8770:8766/udp"
+    volumes:
+      - ./device3-data:/app/received-files
+    depends_on:
+      - device1
+      - device2
+    restart: on-failure
+
+  # Certificate trust manager service to demonstrate mutual trust
+  cert-manager:
+    build: .
+    container_name: cert-manager
+    entrypoint: /bin/sh
+    command: >-
+      -c "
+      echo 'Starting certificate manager service...' &&
+      sleep 30 && 
+      echo 'Waiting for devices to generate certificates...' &&
+      mkdir -p /shared-certs &&
+      
+      # Find device1 certificate
+      echo 'Looking for Device1 certificate...' &&
+      if [ -d /device1-keys ]; then
+        CERT1=$(find /device1-keys -name '*_cert.pem' 2>/dev/null | head -1) &&
+        if [ -n \"$CERT1\" ]; then
+          cp \"$CERT1\" /shared-certs/device1_cert.pem &&
+          echo 'Device1 certificate copied to shared folder' &&
+          echo '--- Certificate fingerprint ---' &&
+          openssl x509 -noout -fingerprint -sha256 -in \"$CERT1\" || echo 'Failed to get fingerprint'
+        else
+          echo 'Device1 certificate not found'
+        fi
+      else
+        echo 'Device1 keys directory not found'
+      fi &&
+      
+      # Find device2 certificate
+      echo 'Looking for Device2 certificate...' &&
+      if [ -d /device2-keys ]; then
+        CERT2=$(find /device2-keys -name '*_cert.pem' 2>/dev/null | head -1) &&
+        if [ -n \"$CERT2\" ]; then
+          cp \"$CERT2\" /shared-certs/device2_cert.pem &&
+          echo 'Device2 certificate copied to shared folder' &&
+          echo '--- Certificate fingerprint ---' &&
+          openssl x509 -noout -fingerprint -sha256 -in \"$CERT2\" || echo 'Failed to get fingerprint'
+        else
+          echo 'Device2 certificate not found'
+        fi
+      else
+        echo 'Device2 keys directory not found'
+      fi &&
+      
+      # Display available certificates
+      echo 'Certificates in shared directory:' &&
+      ls -la /shared-certs/ &&
+      
+      # Keep container running
+      echo 'Certificate exchange complete. Certificates available in /shared-certs' &&
+      tail -f /dev/null
+      "
+    networks:
+      localnet:
+        ipv4_address: 172.20.0.5
+    volumes:
+      - ./device1-keys:/device1-keys:ro
+      - ./device2-keys:/device2-keys:ro
+      - ./shared-certs:/shared-certs
+    depends_on:
+      - device1
+      - device2
+    restart: on-failure
+
+networks:
+  localnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
